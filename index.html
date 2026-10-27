@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Soccer Super Star 3D</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@500;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-color: #0d1117;
+            color: #ffffff;
+        }
+        .font-teko {
+            font-family: 'Teko', sans-serif;
+        }
+        /* Custom UI Glassmorphic Theme */
+        .glass-panel {
+            background: rgba(18, 26, 43, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .glass-button {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+        }
+        .glass-button:active {
+            transform: translateY(1px);
+        }
+        /* Canvas overlay canvas for drawing trajectory */
+        #uiCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: auto;
+        }
+        #webgl-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        /* Custom Scrollbar for level map */
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Goal Banner Animation */
+        @keyframes popIn {
+            0% { transform: scale(0.5) rotate(-5deg); opacity: 0; }
+            70% { transform: scale(1.1) rotate(2deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        .animate-pop {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden select-none">
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="webgl-container"></div>
+
+    <!-- Interactive Swipe Trajectory Overlay Canvas -->
+    <canvas id="uiCanvas"></canvas>
+
+    <!-- TOP BAR HUD (Visible in match) -->
+    <div id="hudOverlay" class="hidden absolute top-0 left-0 w-full p-4 z-20 flex justify-between items-center pointer-events-none">
+        <div class="flex items-center space-x-3 glass-panel px-4 py-2 rounded-2xl pointer-events-auto">
+            <button id="btnPause" class="text-white hover:text-emerald-400 text-xl transition">
+                <i class="fa-solid fa-pause"></i>
+            </button>
+            <div class="h-6 w-px bg-white/20"></div>
+            <div>
+                <span id="hudLevelTitle" class="text-xs uppercase font-semibold text-emerald-400 block tracking-widest">LEVEL 1</span>
+                <span id="hudObjective" class="text-sm font-bold text-white">Score a Goal!</span>
+            </div>
+        </div>
+
+        <!-- Star Rating Requirements / Score -->
+        <div class="flex items-center space-x-2 glass-panel px-4 py-2 rounded-2xl">
+            <i id="star1" class="fa-solid fa-star text-yellow-400 text-lg"></i>
+            <i id="star2" class="fa-solid fa-star text-gray-500 text-lg"></i>
+            <i id="star3" class="fa-solid fa-star text-gray-500 text-lg"></i>
+        </div>
+
+        <div class="glass-panel px-4 py-2 rounded-2xl flex items-center space-x-2">
+            <i class="fa-solid fa-coins text-amber-400"></i>
+            <span id="hudCoins" class="font-bold text-white">0</span>
+        </div>
+    </div>
+
+    <!-- MATCH MESSAGES & CELEBRATIONS -->
+    <div id="matchBanner" class="hidden absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+        <div id="bannerTextContainer" class="text-center animate-pop">
+            <h1 id="bannerTitle" class="text-7xl md:text-9xl font-extrabold font-teko uppercase italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-emerald-400 to-cyan-400 drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)]">
+                GOAL!
+            </h1>
+            <p id="bannerSubtitle" class="text-2xl font-bold text-white drop-shadow-md">OUTSTANDING CURVE SHOT!</p>
+        </div>
+    </div>
+
+    <!-- NAVIGATION / CAREER MENU OVERLAY -->
+    <div id="menuOverlay" class="absolute inset-0 z-30 flex flex-col justify-between p-4 md:p-8 pointer-events-auto bg-slate-950/60 backdrop-blur-md">
+        
+        <!-- HEADER -->
+        <header class="flex justify-between items-center w-full max-w-6xl mx-auto">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                    <i class="fa-solid fa-soccer-ball text-white text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-extrabold font-teko tracking-wider uppercase text-white leading-none">SOCCER SUPER STAR</h1>
+                    <span class="text-xs text-emerald-400 font-semibold tracking-widest uppercase">Pro League Edition</span>
+                </div>
+            </div>
+
+            <!-- PLAYER STATS / CURRENCY -->
+            <div class="flex items-center space-x-4">
+                <div class="glass-panel px-4 py-2 rounded-2xl flex items-center space-x-2">
+                    <i class="fa-solid fa-coins text-amber-400 text-xl"></i>
+                    <span id="menuCoins" class="font-bold text-lg text-white">250</span>
+                </div>
+                <div class="glass-panel px-4 py-2 rounded-2xl flex items-center space-x-2">
+                    <i class="fa-solid fa-star text-yellow-400 text-xl"></i>
+                    <span id="menuStars" class="font-bold text-lg text-white">0 / 45</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN MENU PANELS (DYNAMIC CONTENT) -->
+        <main class="w-full max-w-6xl mx-auto my-auto py-4">
+            
+            <!-- SECTION 1: CAREER ROADMAP / LEVELS -->
+            <section id="secCareer" class="w-full">
+                <div class="text-center mb-6">
+                    <h2 class="text-4xl md:text-5xl font-teko uppercase font-bold text-white tracking-wide">SEASON CAREER ROADMAP</h2>
+                    <p class="text-gray-300 text-sm">Pass, Curve, and Score your way to the World Cup Finals!</p>
+                </div>
+
+                <!-- Horizontal Level Scrollable Roadmap -->
+                <div class="w-full overflow-x-auto scrollbar-none py-6 px-2 flex space-x-6 items-center snap-x">
+                    <!-- Dynamic level cards populated by JS -->
+                    <div id="levelsContainer" class="flex space-x-6 min-w-max mx-auto"></div>
+                </div>
+            </section>
+
+            <!-- SECTION 2: LOCKER ROOM / CUSTOMIZATION (Hidden by default) -->
+            <section id="secLocker" class="hidden w-full max-w-4xl mx-auto glass-panel p-6 md:p-8 rounded-3xl">
+                <h2 class="text-3xl font-teko uppercase font-bold text-emerald-400 mb-6 flex items-center space-x-3">
+                    <i class="fa-solid fa-shirt"></i>
+                    <span>Player Locker Room</span>
+                </h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Left Column: Kit & Colors -->
+                    <div class="space-y-4">
+                        <h3 class="font-bold text-white text-lg">Team Kit Color</h3>
+                        <div class="flex space-x-3">
+                            <button onclick="setKitColor('#10b981')" class="w-10 h-10 rounded-full bg-emerald-500 ring-2 ring-white hover:scale-110 transition"></button>
+                            <button onclick="setKitColor('#ef4444')" class="w-10 h-10 rounded-full bg-red-500 ring-2 ring-white hover:scale-110 transition"></button>
+                            <button onclick="setKitColor('#3b82f6')" class="w-10 h-10 rounded-full bg-blue-500 ring-2 ring-white hover:scale-110 transition"></button>
+                            <button onclick="setKitColor('#f59e0b')" class="w-10 h-10 rounded-full bg-amber-500 ring-2 ring-white hover:scale-110 transition"></button>
+                            <button onclick="setKitColor('#8b5cf6')" class="w-10 h-10 rounded-full bg-purple-500 ring-2 ring-white hover:scale-110 transition"></button>
+                        </div>
+
+                        <h3 class="font-bold text-white text-lg mt-6">Jersey Number</h3>
+                        <div class="flex space-x-3">
+                            <button onclick="setJerseyNumber('7')" class="px-4 py-2 glass-panel rounded-xl font-bold hover:bg-emerald-500 transition">#7</button>
+                            <button onclick="setJerseyNumber('9')" class="px-4 py-2 glass-panel rounded-xl font-bold hover:bg-emerald-500 transition">#9</button>
+                            <button onclick="setJerseyNumber('10')" class="px-4 py-2 glass-panel rounded-xl font-bold hover:bg-emerald-500 transition">#10</button>
+                            <button onclick="setJerseyNumber('11')" class="px-4 py-2 glass-panel rounded-xl font-bold hover:bg-emerald-500 transition">#11</button>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Boots Customization -->
+                    <div class="space-y-4">
+                        <h3 class="font-bold text-white text-lg">Pro Cleats / Boots</h3>
+                        <div id="bootsList" class="grid grid-cols-2 gap-3">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: TROPHY ROOM & STATS -->
+            <section id="secTrophies" class="hidden w-full max-w-4xl mx-auto glass-panel p-6 md:p-8 rounded-3xl">
+                <h2 class="text-3xl font-teko uppercase font-bold text-amber-400 mb-6 flex items-center space-x-3">
+                    <i class="fa-solid fa-trophy"></i>
+                    <span>Career Hall of Fame</span>
+                </h2>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <i class="fa-solid fa-futbol text-emerald-400 text-3xl mb-2"></i>
+                        <span id="statGoals" class="block text-3xl font-bold">0</span>
+                        <span class="text-xs text-gray-400 font-semibold uppercase">Total Goals</span>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <i class="fa-solid fa-hands-holding-circle text-cyan-400 text-3xl mb-2"></i>
+                        <span id="statAssists" class="block text-3xl font-bold">0</span>
+                        <span class="text-xs text-gray-400 font-semibold uppercase">Pass Assists</span>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <i class="fa-solid fa-wand-magic-sparkles text-purple-400 text-3xl mb-2"></i>
+                        <span id="statCurves" class="block text-3xl font-bold">0</span>
+                        <span class="text-xs text-gray-400 font-semibold uppercase">Curve Shots</span>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <i class="fa-solid fa-award text-amber-400 text-3xl mb-2"></i>
+                        <span id="statCups" class="block text-3xl font-bold">0</span>
+                        <span class="text-xs text-gray-400 font-semibold uppercase">Trophies</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- FOOTER NAVIGATION TABS -->
+        <footer class="w-full max-w-lg mx-auto glass-panel p-2 rounded-full flex justify-around items-center">
+            <button onclick="switchTab('career')" id="tabCareer" class="flex-1 py-3 px-4 rounded-full flex items-center justify-center space-x-2 text-emerald-400 font-bold bg-emerald-500/20 transition">
+                <i class="fa-solid fa-map"></i>
+                <span>CAREER</span>
+            </button>
+            <button onclick="switchTab('locker')" id="tabLocker" class="flex-1 py-3 px-4 rounded-full flex items-center justify-center space-x-2 text-gray-400 hover:text-white font-bold transition">
+                <i class="fa-solid fa-shirt"></i>
+                <span>LOCKER</span>
+            </button>
+            <button onclick="switchTab('trophies')" id="tabTrophies" class="flex-1 py-3 px-4 rounded-full flex items-center justify-center space-x-2 text-gray-400 hover:text-white font-bold transition">
+                <i class="fa-solid fa-trophy"></i>
+                <span>TROPHIES</span>
+            </button>
+        </footer>
+    </div>
+
+    <!-- PAUSE / LEVEL COMPLETE DIALOG OVERLAY -->
+    <div id="dialogOverlay" class="hidden absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-md">
+        <div class="glass-panel p-8 rounded-3xl max-w-sm w-full text-center space-y-6 animate-pop">
+            <h2 id="dialogTitle" class="text-4xl font-teko uppercase font-bold text-white">LEVEL COMPLETE!</h2>
+            
+            <div id="dialogStars" class="flex justify-center space-x-3 text-3xl">
+                <i class="fa-solid fa-star text-yellow-400"></i>
+                <i class="fa-solid fa-star text-yellow-400"></i>
+                <i class="fa-solid fa-star text-gray-600"></i>
+            </div>
+
+            <div class="bg-slate-900/60 p-4 rounded-2xl flex justify-between items-center text-sm">
+                <span class="text-gray-400">Match Coins Earned:</span>
+                <span id="dialogCoins" class="font-bold text-amber-400 text-lg">+50 COINS</span>
+            </div>
+
+            <div class="flex space-x-4">
+                <button id="btnRetry" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold transition">
+                    <i class="fa-solid fa-rotate-right mr-2"></i>Retry
+                </button>
+                <button id="btnNext" class="flex-1 py-3 glass-button rounded-2xl font-bold transition">
+                    Next <i class="fa-solid fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME LOGIC AND THREE.JS SIMULATION -->
+    <script>
+        /* ==========================================
+           AUDIO ENGINE (WEB AUDIO API - NO EXTERNAL FILES)
+           ========================================== */
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playKick() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+            playWhistle() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(2400, this.ctx.currentTime);
+                osc.frequency.setValueAtTime(2600, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+            playGoalNet() {
+                if (!this.ctx) return;
+                // White noise burst for net impact
+                const bufferSize = this.ctx.sampleRate * 0.25;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(800, this.ctx.currentTime);
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start();
+            }
+            playUi() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            }
+        }
+
+        const sounds = new SoundEngine();
+
+        /* ==========================================
+           GAME STATE & DATA
+           ========================================== */
+        const gameState = {
+            coins: 250,
+            stars: 0,
+            currentLevel: 1,
+            unlockedLevel: 1,
+            selectedBoots: 0,
+            kitColor: '#10b981',
+            jerseyNum: '10',
+            stats: {
+                goals: 0,
+                assists: 0,
+                curves: 0,
+                trophies: 0
+            },
+            starsByLevel: {},
+            boots: [
+                { name: 'Street', color: '#111827', price: 0, owned: true },
+                { name: 'Emerald Pro', color: '#10b981', price: 120, owned: false },
+                { name: 'Gold Strike', color: '#f59e0b', price: 250, owned: false },
+                { name: 'Volt Flash', color: '#84cc16', price: 400, owned: false }
+            ]
+        };
+
+    // --- GAME STATE & CONSTANTS ---
+    const STATE = {
+        currentLevel: 1,
+        maxUnlockedLevel: 1,
+        coins: 150,
+        stars: 0,
+        unlockedBoots: ['boot_default'],
+        equippedBoot: 'boot_default',
+        unlockedKits: ['kit_default'],
+        equippedKit: 'kit_default',
+        soundMuted: false,
+        // Match progression state
+        levelAttempts: 0,
+        levelGoalsScored: 0,
+        goalsNeeded: 1, // SHORTER LEVELS: Default to 1-2 goals per level
+        shotsRemaining: 3
+    };
+
+    // Level definitions - SHORTER LEVELS & FASTER PROGRESSION
+    const LEVEL_CONFIGS = Array.from({ length: 25 }, (_, i) => {
+        const lvl = i + 1;
+        return {
+            level: lvl,
+            goalsNeeded: lvl % 3 === 0 ? 2 : 1, // Shorter levels: 1 goal (or 2 for boss levels)
+            maxShots: lvl % 3 === 0 ? 4 : 3,
+            wallDefenders: lvl < 3 ? 0 : Math.min(5, Math.floor((lvl - 1) / 3)),
+            wallDistance: 18 + Math.random() * 4,
+            ballDistance: 22 + Math.min(10, lvl * 0.5),
+            ballAngle: (Math.random() - 0.5) * 0.6,
+            gkSkill: Math.min(0.55, 0.15 + lvl * 0.015), // EASIER GOALKEEPER: Low max skill cap
+            wind: lvl > 5 ? (Math.random() - 0.5) * (lvl * 0.15) : 0
+        };
+    });
+
+    const LEVEL_NAMES = [
+        'Kickoff', 'First Touch', 'Wall Breaker', 'Near Post', 'Curve Lesson',
+        'Crossbar', 'Tight Angle', 'Keeper Test', 'Free Kick', 'Midfield Strike',
+        'Derby Night', 'Wind Check', 'Penalty Box', 'Far Corner', 'Hat Trick',
+        'Cup Tie', 'Semi Final', 'Night Match', 'Rival Keeper', 'Quarter Dream',
+        'Extra Time', 'Final Warmup', 'Champions Path', 'Last Wall', 'World Cup Final'
+    ];
+
+    const levelsData = LEVEL_CONFIGS.map((cfg) => ({
+        id: cfg.level,
+        title: `${cfg.level}: ${LEVEL_NAMES[cfg.level - 1] || 'Matchday'}`,
+        wallDefenders: cfg.wallDefenders,
+        isPassObjective: false,
+        ballPos: new THREE.Vector3(
+            Math.sin(cfg.ballAngle) * 4,
+            0.24,
+            -20 + cfg.ballDistance
+        ),
+        goalsNeeded: cfg.goalsNeeded,
+        maxShots: cfg.maxShots,
+        gkSkill: cfg.gkSkill,
+        wind: cfg.wind
+    }));
+
+    let scene, camera, renderer;
+    let goalGroup, netMesh, ballMesh, ball, keeperMesh;
+    let opponents = [];
+    let isBallInFlight = false;
+    let isGoalScored = false;
+    let ballPathPoints = [];
+    let ballPathIndex = 0;
+    let currentLevelConfig = null;
+
+    // --- GOALKEEPER AI LOGIC ---
+    class Goalkeeper {
+        constructor(scene) {
+            this.scene = scene;
+            this.mesh = this.createMesh();
+            this.scene.add(this.mesh);
+            this.resetPosition();
+            this.state = 'idle'; // idle, diving, returning
+            this.targetPos = new THREE.Vector3();
+            this.diveProgress = 0;
+            this.reactionDelay = 0; // Delay frame count for easier scoring
+        }
+
+        createMesh() {
+            const group = new THREE.Group();
+            const kitMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.4 });
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0ac69 });
+            const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.24, 0.85, 12), kitMat);
+            torso.position.y = 1.15;
+            group.add(torso);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), skinMat);
+            head.position.y = 1.75;
+            group.add(head);
+            const legGeo = new THREE.CylinderGeometry(0.08, 0.07, 0.7);
+            const leftLeg = new THREE.Mesh(legGeo, kitMat);
+            leftLeg.position.set(-0.12, 0.45, 0);
+            group.add(leftLeg);
+            const rightLeg = leftLeg.clone();
+            rightLeg.position.x = 0.12;
+            group.add(rightLeg);
+            return group;
+        }
+
+        resetPosition() {
+            this.mesh.position.set(0, 1.1, 48.5); // Near goal line (Z=50)
+            this.mesh.rotation.set(0, 0, 0);
+            this.state = 'idle';
+            this.reactionDelay = 0;
+        }
+
+        update(ball, isShotInFlight) {
+            if (!isShotInFlight) {
+                // Subtle idle stance movement
+                this.mesh.position.x = Math.sin(Date.now() * 0.003) * 0.8;
+                return;
+            }
+
+            if (this.state === 'idle' && ball.velocity.z > 5) {
+                // Predict ball destination at goal line (Z = 50)
+                const timeToGoal = (50 - ball.mesh.position.z) / ball.velocity.z;
+                
+                if (timeToGoal > 0 && timeToGoal < 2.5) {
+                    const predictedX = ball.mesh.position.x + ball.velocity.x * timeToGoal;
+                    const predictedY = Math.max(0.5, ball.mesh.position.y + ball.velocity.y * timeToGoal - 0.5 * 9.8 * timeToGoal * timeToGoal);
+
+                    // EASIER GOALKEEPER: Higher delay & misjudgment radius
+                    const levelCfg = LEVEL_CONFIGS[STATE.currentLevel - 1] || LEVEL_CONFIGS[0];
+                    const gkError = (1 - levelCfg.gkSkill) * 1.8; // Intentional error offset
+
+                    // Only react if shot is within reasonable reach
+                    if (Math.abs(predictedX) < 4.8 && predictedY < 2.8) {
+                        this.targetPos.set(
+                            Math.max(-3.5, Math.min(3.5, predictedX + (Math.random() - 0.5) * gkError)),
+                            Math.max(0.8, Math.min(2.2, predictedY)),
+                            49.0
+                        );
+                        this.state = 'reacting';
+                        // EASIER GOALKEEPER: Reaction lag frame delay
+                        this.reactionDelay = Math.floor(10 + (1 - levelCfg.gkSkill) * 15);
+                    }
+                }
+            }
+
+            if (this.state === 'reacting') {
+                if (this.reactionDelay > 0) {
+                    this.reactionDelay--;
+                } else {
+                    this.state = 'diving';
+                    this.diveProgress = 0;
+                }
+            }
+
+            if (this.state === 'diving') {
+                // EASIER GOALKEEPER: Slower lerp speed for dive
+                this.diveProgress += 0.045; 
+                this.mesh.position.lerp(this.targetPos, 0.12);
+
+                // Dive rotation visual effect
+                const diveDir = Math.sign(this.targetPos.x - this.mesh.position.x);
+                if (Math.abs(this.targetPos.x) > 1.0) {
+                    this.mesh.rotation.z = -diveDir * Math.min(Math.PI / 3, this.diveProgress * 1.5);
+                }
+            }
+        }
+
+        checkCollision(ballMesh) {
+            // EASIER GOALKEEPER: Smaller collision save radius (1.15m vs 1.8m)
+            const dist = this.mesh.position.distanceTo(ballMesh.position);
+            return dist < 1.15;
+        }
+    }
+
+    function init3D() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x07111f);
+
+        camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
+        camera.position.set(0, 6, 24);
+        camera.lookAt(0, 1, -10);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.getElementById('webgl-container').appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff4d6, 1.1);
+        sun.position.set(18, 36, 16);
+        sun.castShadow = true;
+        scene.add(sun);
+        scene.add(new THREE.HemisphereLight(0x87ceeb, 0x14532d, 0.45));
+
+        createPitch();
+        createGoal();
+        createBall();
+        createGoalkeeper();
+        window.addEventListener('resize', onWindowResize);
+    }
+
+        /* Create Realistic Pitch Texture Procedurally */
+        function createPitch() {
+            const width = 80, length = 120;
+            const geometry = new THREE.PlaneGeometry(width, length);
+
+            // Canvas texture for grass stripes and pitch lines
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+
+            // Grass base
+            ctx.fillStyle = '#15803d';
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            // Stripes
+            ctx.fillStyle = '#16a34a';
+            for (let i = 0; i < 1024; i += 64) {
+                ctx.fillRect(0, i, 1024, 32);
+            }
+
+            // Lines
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 8;
+            ctx.strokeRect(32, 32, 1024 - 64, 1024 - 64);
+            // Center Line
+            ctx.beginPath();
+            ctx.moveTo(32, 512);
+            ctx.lineTo(1024 - 32, 512);
+            ctx.stroke();
+            // Penalty Area
+            ctx.strokeRect(256, 1024 - 256, 512, 224);
+            ctx.strokeRect(256, 32, 512, 224);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshStandardMaterial({
+                map: texture,
+                roughness: 0.8,
+                metalness: 0.1
+            });
+
+            const pitch = new THREE.Mesh(geometry, material);
+            pitch.rotation.x = -Math.PI / 2;
+            pitch.receiveShadow = true;
+            scene.add(pitch);
+
+            // Stadium Stands Background Effect
+            const standsGeo = new THREE.CylinderGeometry(60, 70, 25, 32, 1, true);
+            const standsMat = new THREE.MeshBasicMaterial({
+                color: 0x1e293b,
+                side: THREE.BackSide
+            });
+            const stands = new THREE.Mesh(standsGeo, standsMat);
+            stands.position.y = 10;
+            scene.add(stands);
+        }
+
+        /* 3D Goal Post with Interactive Net Structure */
+        function createGoal() {
+            goalGroup = new THREE.Group();
+
+            const postMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+            const postRadius = 0.12;
+            const width = 7.32, height = 2.44, depth = 2.0;
+
+            // Crossbar
+            const crossbarGeo = new THREE.CylinderGeometry(postRadius, postRadius, width);
+            const crossbar = new THREE.Mesh(crossbarGeo, postMat);
+            crossbar.rotation.z = Math.PI / 2;
+            crossbar.position.set(0, height, 0);
+            crossbar.castShadow = true;
+            goalGroup.add(crossbar);
+
+            // Left & Right Posts
+            const postGeo = new THREE.CylinderGeometry(postRadius, postRadius, height);
+            const leftPost = new THREE.Mesh(postGeo, postMat);
+            leftPost.position.set(-width / 2, height / 2, 0);
+            leftPost.castShadow = true;
+            goalGroup.add(leftPost);
+
+            const rightPost = new THREE.Mesh(postGeo, postMat);
+            rightPost.position.set(width / 2, height / 2, 0);
+            rightPost.castShadow = true;
+            goalGroup.add(rightPost);
+
+            // Goal Netting
+            const netGeo = new THREE.BoxGeometry(width, height, depth);
+            const netMat = new THREE.MeshBasicMaterial({
+                color: 0xe2e8f0,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.3
+            });
+            netMesh = new THREE.Mesh(netGeo, netMat);
+            netMesh.position.set(0, height / 2, -depth / 2);
+            goalGroup.add(netMesh);
+
+            goalGroup.position.set(0, 0, -20);
+            scene.add(goalGroup);
+        }
+
+        /* Soccer Ball Creation */
+        function createBall() {
+            const radius = 0.24;
+            const geo = new THREE.SphereGeometry(radius, 32, 32);
+
+            // Canvas texture for classic pentagon soccer ball
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 512, 256);
+            ctx.fillStyle = '#0f172a';
+            for (let i = 0; i < 10; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random() * 512, Math.random() * 256, 24, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            const ballTex = new THREE.CanvasTexture(canvas);
+
+            const mat = new THREE.MeshStandardMaterial({
+                map: ballTex,
+                roughness: 0.3
+            });
+
+            ballMesh = new THREE.Mesh(geo, mat);
+            ballMesh.castShadow = true;
+
+            ball = new THREE.Group();
+            ball.add(ballMesh);
+            ball.position.set(0, radius, 10);
+            scene.add(ball);
+        }
+
+        /* Create Procedural 3D Goalkeeper Player */
+        function createGoalkeeper() {
+            keeperMesh = createPlayerMesh('#06b6d4', 'GK');
+            keeperMesh.position.set(0, 0, -19.5);
+            scene.add(keeperMesh);
+        }
+
+        /* Generic 3D Footballer Character Builder */
+        function createPlayerMesh(colorHex, jerseyNum) {
+            const group = new THREE.Group();
+
+            // Legs Material / Boots
+            const selectedBoot = (gameState.boots && gameState.boots[gameState.selectedBoots]) || { color: '#111827' };
+            const bootMat = new THREE.MeshStandardMaterial({ color: selectedBoot.color });
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0ac69 });
+            const kitMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.4 });
+
+            // Torso
+            const torsoGeo = new THREE.CylinderGeometry(0.3, 0.25, 0.9, 12);
+            const torso = new THREE.Mesh(torsoGeo, kitMat);
+            torso.position.y = 1.1;
+            torso.castShadow = true;
+            group.add(torso);
+
+            // Head
+            const headGeo = new THREE.SphereGeometry(0.18, 16, 16);
+            const head = new THREE.Mesh(headGeo, skinMat);
+            head.position.y = 1.75;
+            head.castShadow = true;
+            group.add(head);
+
+            // Legs
+            const legGeo = new THREE.CylinderGeometry(0.08, 0.07, 0.7);
+            const leftLeg = new THREE.Mesh(legGeo, kitMat);
+            leftLeg.position.set(-0.15, 0.45, 0);
+            leftLeg.castShadow = true;
+            group.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeo, kitMat);
+            rightLeg.position.set(0.15, 0.45, 0);
+            rightLeg.castShadow = true;
+            group.add(rightLeg);
+
+            // Boots
+            const bootGeo = new THREE.BoxGeometry(0.12, 0.1, 0.25);
+            const leftBoot = new THREE.Mesh(bootGeo, bootMat);
+            leftBoot.position.set(-0.15, 0.05, 0.05);
+            leftBoot.castShadow = true;
+            group.add(leftBoot);
+
+            const rightBoot = new THREE.Mesh(bootGeo, bootMat);
+            rightBoot.position.set(0.15, 0.05, 0.05);
+            rightBoot.castShadow = true;
+            group.add(rightBoot);
+
+            return group;
+        }
+
+        /* Setup Defenders Wall */
+        function setupDefenders(count) {
+            // Remove previous opponents
+            opponents.forEach(op => scene.remove(op));
+            opponents = [];
+
+            if (count <= 0) return;
+
+            const startX = -((count - 1) * 0.7) / 2;
+            for (let i = 0; i < count; i++) {
+                const defender = createPlayerMesh('#ef4444', '4');
+                defender.position.set(startX + i * 0.7, 0, -10);
+                scene.add(defender);
+                opponents.push(defender);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            const uiCanvas = document.getElementById('uiCanvas');
+            uiCanvas.width = window.innerWidth;
+            uiCanvas.height = window.innerHeight;
+        }
+
+        /* ==========================================
+           SWIPE TRAJECTORY & INPUT SYSTEM
+           ========================================== */
+        let isDrawing = false;
+        let swipePoints = [];
+        let uiCanvas, uiCtx;
+
+        function initTrajectoryOverlay() {
+            uiCanvas = document.getElementById('uiCanvas');
+            uiCtx = uiCanvas.getContext('2d');
+            uiCanvas.width = window.innerWidth;
+            uiCanvas.height = window.innerHeight;
+
+            const startDraw = (x, y) => {
+                if (isBallInFlight || isGoalScored) return;
+                sounds.init();
+                isDrawing = true;
+                swipePoints = [{ x, y }];
+            };
+
+            const moveDraw = (x, y) => {
+                if (!isDrawing) return;
+                swipePoints.push({ x, y });
+                drawTrajectoryLine();
+            };
+
+            const endDraw = () => {
+                if (!isDrawing) return;
+                isDrawing = false;
+                if (swipePoints.length > 3) {
+                    processSwipeAndLaunch();
+                }
+                clearTrajectoryCanvas();
+            };
+
+            // Touch events
+            uiCanvas.addEventListener('touchstart', (e) => {
+                const t = e.touches[0];
+                startDraw(t.clientX, t.clientY);
+            });
+            uiCanvas.addEventListener('touchmove', (e) => {
+                const t = e.touches[0];
+                moveDraw(t.clientX, t.clientY);
+            });
+            uiCanvas.addEventListener('touchend', endDraw);
+
+            // Mouse events
+            uiCanvas.addEventListener('mousedown', (e) => startDraw(e.clientX, e.clientY));
+            uiCanvas.addEventListener('mousemove', (e) => moveDraw(e.clientX, e.clientY));
+            uiCanvas.addEventListener('mouseup', endDraw);
+        }
+
+        function drawTrajectoryLine() {
+            uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
+            if (swipePoints.length < 2) return;
+
+            uiCtx.beginPath();
+            uiCtx.moveTo(swipePoints[0].x, swipePoints[0].y);
+
+            for (let i = 1; i < swipePoints.length; i++) {
+                uiCtx.lineTo(swipePoints[i].x, swipePoints[i].y);
+            }
+
+            // Glow Effect
+            uiCtx.strokeStyle = '#10b981';
+            uiCtx.lineWidth = 6;
+            uiCtx.lineCap = 'round';
+            uiCtx.lineJoin = 'round';
+            uiCtx.shadowColor = '#34d399';
+            uiCtx.shadowBlur = 12;
+            uiCtx.stroke();
+        }
+
+        function clearTrajectoryCanvas() {
+            uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
+        }
+
+        /* Convert Screen Swipe to 3D Trajectory Array (Curve & Elevation) */
+        function processSwipeAndLaunch() {
+            if (swipePoints.length < 2) return;
+
+            const first = swipePoints[0];
+            const last = swipePoints[swipePoints.length - 1];
+
+            // Raycasting from start and end points
+            const start3D = unprojectScreenToWorld(first.x, first.y, ball.position.z);
+            const end3D = unprojectScreenToWorld(last.x, last.y, -20); // Goal depth
+
+            // Midpoint arc calculation for realistic Magnus curve
+            const midIndex = Math.floor(swipePoints.length / 2);
+            const midPoint = swipePoints[midIndex];
+            const mid3D = unprojectScreenToWorld(midPoint.x, midPoint.y, (ball.position.z - 20) / 2);
+
+            // Generate Interpolated 3D Quadratic Curve Points
+            ballPathPoints = [];
+            const steps = 40;
+            const p0 = ball.position.clone();
+            const p1 = new THREE.Vector3(mid3D.x * 1.5, Math.max(1.5, (first.y - last.y) * 0.02), (ball.position.z - 20) / 2);
+            const p2 = new THREE.Vector3(end3D.x, Math.max(0.5, (first.y - last.y) * 0.015), -20);
+
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                // Quadratic Bezier Formula
+                const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x;
+                const y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y;
+                const z = (1 - t) * (1 - t) * p0.z + 2 * (1 - t) * t * p1.z + t * t * p2.z;
+                ballPathPoints.push(new THREE.Vector3(x, y, z));
+            }
+
+            ballPathIndex = 0;
+            isBallInFlight = true;
+            sounds.playKick();
+
+            // Trigger Goalkeeper Reaction AI based on target position
+            triggerGoalkeeperAI(p2);
+        }
+
+        function unprojectScreenToWorld(screenX, screenY, targetZ) {
+            const vec = new THREE.Vector3(
+                (screenX / window.innerWidth) * 2 - 1,
+                -(screenY / window.innerHeight) * 2 + 1,
+                0.5
+            );
+            vec.unproject(camera);
+            const dir = vec.sub(camera.position).normalize();
+            const distance = (targetZ - camera.position.z) / dir.z;
+            return camera.position.clone().add(dir.multiplyScalar(distance));
+        }
+
+        /* Goalkeeper Jump / Dive Logic */
+        function triggerGoalkeeperAI(targetPos) {
+            // Predict goal entrance position
+            const diveTargetX = Math.max(-3.5, Math.min(3.5, targetPos.x));
+            const diveTargetY = Math.max(0.5, Math.min(2.2, targetPos.y));
+
+            const duration = 0.8;
+            const startX = keeperMesh.position.x;
+            const startY = keeperMesh.position.y;
+
+            let elapsed = 0;
+            const keeperInterval = setInterval(() => {
+                elapsed += 0.02;
+                const progress = Math.min(1, elapsed / duration);
+                keeperMesh.position.x = startX + (diveTargetX - startX) * progress;
+                if (progress < 0.5) {
+                    keeperMesh.position.y = startY + (diveTargetY - startY) * (progress * 2);
+                } else {
+                    keeperMesh.position.y = diveTargetY * (1 - (progress - 0.5) * 2);
+                }
+
+                if (progress >= 1) clearInterval(keeperInterval);
+            }, 20);
+        }
+
+        /* ==========================================
+           GAME LOOP & PHYSICS UPDATE
+           ========================================== */
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Ball Flight Interpolation along drawn trajectory
+            if (isBallInFlight && ballPathPoints.length > 0) {
+                if (ballPathIndex < ballPathPoints.length) {
+                    const nextPos = ballPathPoints[ballPathIndex];
+                    ball.position.copy(nextPos);
+                    ballMesh.rotation.x += 0.2;
+                    ballMesh.rotation.z += 0.1;
+                    ballPathIndex++;
+
+                    // Dynamic Follow Camera
+                    camera.position.x = THREE.MathUtils.lerp(camera.position.x, ball.position.x * 0.4, 0.1);
+                    camera.position.y = THREE.MathUtils.lerp(camera.position.y, ball.position.y + 3, 0.1);
+                    camera.lookAt(ball.position.x * 0.2, 1.5, ball.position.z - 5);
+
+                    // Collision Check with Goal & Keeper
+                    checkCollisions();
+                } else {
+                    isBallInFlight = false;
+                    checkGoalOutcome();
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        /* Detect Ball Collision with Goalkeeper, Goal Frame or Net */
+        function checkCollisions() {
+            // Keeper Save Collision (measure against the body, not the feet)
+            const keeperPoint = new THREE.Vector3(
+                keeperMesh.position.x,
+                keeperMesh.position.y + 1.05,
+                keeperMesh.position.z
+            );
+            const distToKeeper = ball.position.distanceTo(keeperPoint);
+            if (distToKeeper < 0.9 && !isGoalScored) {
+                isBallInFlight = false;
+                triggerSave();
+            }
+        }
+
+        function checkGoalOutcome() {
+            if (isGoalScored) return;
+
+            const bp = ball.position;
+            // Goal Post Boundaries: Width 7.32 (-3.66 to 3.66), Height 2.44, Depth Z <= -19.5
+            if (bp.x >= -3.6 && bp.x <= 3.6 && bp.y >= 0.1 && bp.y <= 2.5 && bp.z <= -19.0) {
+                triggerGoal();
+            } else {
+                triggerMiss();
+            }
+        }
+
+        function triggerGoal() {
+            isGoalScored = true;
+            document.getElementById('bannerTitle').innerText = 'GOAL!';
+            document.getElementById('bannerSubtitle').innerText = 'OUTSTANDING CURVE SHOT!';
+            sounds.playGoalNet();
+            sounds.playWhistle();
+
+            // Stats Update
+            gameState.stats.goals++;
+            gameState.coins += 50;
+            saveGameState();
+
+            // Cinematic Goal Camera Zoom
+            const goalBanner = document.getElementById('matchBanner');
+            goalBanner.classList.remove('hidden');
+
+            setTimeout(() => {
+                goalBanner.classList.add('hidden');
+                showDialog('GOAL SCORED!', 3, 50);
+            }, 2000);
+        }
+
+        function triggerSave() {
+            gameState.coins += 10;
+            saveGameState();
+            sounds.playWhistle();
+            const goalBanner = document.getElementById('matchBanner');
+            document.getElementById('bannerTitle').innerText = 'SAVED!';
+            document.getElementById('bannerSubtitle').innerText = 'GOALKEEPER BLOCKED IT!';
+            goalBanner.classList.remove('hidden');
+
+            setTimeout(() => {
+                goalBanner.classList.add('hidden');
+                showDialog('SAVED BY KEEPER', 1, 10);
+            }, 1800);
+        }
+
+        function triggerMiss() {
+            const goalBanner = document.getElementById('matchBanner');
+            document.getElementById('bannerTitle').innerText = 'MISSED!';
+            document.getElementById('bannerSubtitle').innerText = 'OFF TARGET!';
+            goalBanner.classList.remove('hidden');
+
+            setTimeout(() => {
+                goalBanner.classList.add('hidden');
+                showDialog('SHOT MISSED', 0, 0);
+            }, 1500);
+        }
+
+        /* ==========================================
+           CAREER ROADMAP & MENU UI CONTROLLER
+           ========================================== */
+        function initCareerMenu() {
+            renderRoadmap();
+            renderBoots();
+            updateUIStats();
+        }
+
+        function renderRoadmap() {
+            const container = document.getElementById('levelsContainer');
+            container.innerHTML = '';
+
+            levelsData.forEach(lvl => {
+                const isUnlocked = lvl.id <= gameState.unlockedLevel;
+                const card = document.createElement('div');
+                card.className = `w-44 h-56 glass-panel rounded-3xl p-5 flex flex-col justify-between items-center transition transform snap-center ${
+                    isUnlocked ? 'hover:scale-105 cursor-pointer border-emerald-500/50' : 'opacity-50 grayscale'
+                }`;
+
+                const earnedStars = (gameState.starsByLevel && gameState.starsByLevel[lvl.id]) || 0;
+                const levelName = lvl.title.includes(':') ? lvl.title.split(':').slice(1).join(':').trim() : lvl.title;
+                card.innerHTML = `
+                    <div class="w-10 h-10 rounded-full ${isUnlocked ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-700 text-gray-400'} flex items-center justify-center font-bold">
+                        ${lvl.id}
+                    </div>
+                    <div class="text-center">
+                        <h4 class="font-bold text-white text-base">${levelName}</h4>
+                        <div class="flex justify-center space-x-1 mt-2 text-sm text-yellow-400">
+                            <i class="fa-solid fa-star ${earnedStars >= 1 ? '' : 'text-gray-600'}"></i>
+                            <i class="fa-solid fa-star ${earnedStars >= 2 ? '' : 'text-gray-600'}"></i>
+                            <i class="fa-solid fa-star ${earnedStars >= 3 ? '' : 'text-gray-600'}"></i>
+                        </div>
+                    </div>
+                    <button class="${isUnlocked ? 'glass-button' : 'bg-gray-700'} w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider">
+                        ${isUnlocked ? 'PLAY' : 'LOCKED'}
+                    </button>
+                `;
+
+                if (isUnlocked) {
+                    card.onclick = () => startMatch(lvl.id);
+                }
+                container.appendChild(card);
+            });
+        }
+
+        function renderBoots() {
+            const bootsContainer = document.getElementById('bootsList');
+            bootsContainer.innerHTML = '';
+
+            gameState.boots.forEach((boot, index) => {
+                const isSelected = gameState.selectedBoots === index;
+                const btn = document.createElement('div');
+                btn.className = `glass-panel p-3 rounded-2xl flex flex-col items-center justify-between cursor-pointer border ${
+                    isSelected ? 'border-emerald-400 bg-emerald-500/10' : 'border-transparent'
+                }`;
+                btn.onclick = () => selectBoot(index);
+
+                btn.innerHTML = `
+                    <i class="fa-solid fa-shoe-prints text-2xl mb-1" style="color: ${boot.color}"></i>
+                    <span class="text-xs font-bold text-white">${boot.name}</span>
+                    <span class="text-[10px] ${boot.owned ? 'text-emerald-400' : 'text-amber-400'}">
+                        ${boot.owned ? (isSelected ? 'EQUIPPED' : 'OWNED') : `${boot.price} Coins`}
+                    </span>
+                `;
+                bootsContainer.appendChild(btn);
+            });
+        }
+
+        function selectBoot(index) {
+            const boot = gameState.boots[index];
+            if (boot.owned) {
+                gameState.selectedBoots = index;
+                renderBoots();
+                saveGameState();
+            } else if (gameState.coins >= boot.price) {
+                gameState.coins -= boot.price;
+                boot.owned = true;
+                gameState.selectedBoots = index;
+                renderBoots();
+                updateUIStats();
+                saveGameState();
+            }
+        }
+
+        function switchTab(tab) {
+            sounds.playUi();
+            ['secCareer', 'secLocker', 'secTrophies'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            ['tabCareer', 'tabLocker', 'tabTrophies'].forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('text-emerald-400', 'bg-emerald-500/20');
+                el.classList.add('text-gray-400');
+            });
+
+            if (tab === 'career') {
+                document.getElementById('secCareer').classList.remove('hidden');
+                document.getElementById('tabCareer').classList.add('text-emerald-400', 'bg-emerald-500/20');
+            } else if (tab === 'locker') {
+                document.getElementById('secLocker').classList.remove('hidden');
+                document.getElementById('tabLocker').classList.add('text-emerald-400', 'bg-emerald-500/20');
+            } else if (tab === 'trophies') {
+                document.getElementById('secTrophies').classList.remove('hidden');
+                document.getElementById('tabTrophies').classList.add('text-emerald-400', 'bg-emerald-500/20');
+            }
+        }
+
+        function setKitColor(color) {
+            gameState.kitColor = color;
+            saveGameState();
+        }
+
+        function setJerseyNumber(num) {
+            gameState.jerseyNum = num;
+            saveGameState();
+        }
+
+        function updateUIStats() {
+            const stats = gameState.stats || { goals: 0, assists: 0, curves: 0, trophies: 0 };
+            document.getElementById('menuCoins').innerText = gameState.coins;
+            document.getElementById('hudCoins').innerText = gameState.coins;
+            document.getElementById('menuStars').innerText = `${gameState.stars} / ${levelsData.length * 3}`;
+            document.getElementById('statGoals').innerText = stats.goals;
+            document.getElementById('statAssists').innerText = stats.assists;
+            document.getElementById('statCurves').innerText = stats.curves;
+            document.getElementById('statCups').innerText = stats.trophies;
+        }
+
+        /* Load Level & Reset Arena */
+        function startMatch(levelId) {
+            sounds.playWhistle();
+            currentLevelConfig = levelsData.find(l => l.id === levelId);
+            gameState.currentLevel = levelId;
+
+            // Hide Menu, Show HUD
+            document.getElementById('menuOverlay').classList.add('hidden');
+            document.getElementById('hudOverlay').classList.remove('hidden');
+            document.getElementById('hudLevelTitle').innerText = `LEVEL ${levelId}`;
+            document.getElementById('hudObjective').innerText = currentLevelConfig.isPassObjective ? 'Pass to Teammate!' : 'Curve & Score!';
+
+            // Setup Defenders and Ball Position
+            setupDefenders(currentLevelConfig.wallDefenders);
+            ball.position.copy(currentLevelConfig.ballPos);
+
+            // Reset Keeper
+            keeperMesh.position.set(0, 0, -19.5);
+            isGoalScored = false;
+            isBallInFlight = false;
+
+            // Reset Camera
+            camera.position.set(ball.position.x * 0.5, ball.position.y + 4, ball.position.z + 12);
+            camera.lookAt(ball.position.x, ball.position.y + 1, -20);
+
+            ['star1', 'star2', 'star3'].forEach((id) => {
+                const icon = document.getElementById(id);
+                icon.classList.remove('text-yellow-400');
+                icon.classList.add('text-gray-500');
+            });
+        }
+
+        function showDialog(title, stars, earnedCoins) {
+            document.getElementById('dialogOverlay').classList.remove('hidden');
+            document.getElementById('dialogTitle').innerText = title;
+            document.getElementById('dialogCoins').innerText = `+${earnedCoins} COINS`;
+
+            document.querySelectorAll('#dialogStars i').forEach((icon, index) => {
+                icon.classList.toggle('text-yellow-400', index < stars);
+                icon.classList.toggle('text-gray-600', index >= stars);
+            });
+            ['star1', 'star2', 'star3'].forEach((id, index) => {
+                const icon = document.getElementById(id);
+                icon.classList.toggle('text-yellow-400', index < stars);
+                icon.classList.toggle('text-gray-500', index >= stars);
+            });
+
+            if (!gameState.starsByLevel) gameState.starsByLevel = {};
+            const previousStars = gameState.starsByLevel[gameState.currentLevel] || 0;
+            if (stars > previousStars) {
+                gameState.stars += stars - previousStars;
+                gameState.starsByLevel[gameState.currentLevel] = stars;
+                gameState.stats.trophies = Object.values(gameState.starsByLevel).filter((value) => value === 3).length;
+            }
+            updateUIStats();
+            saveGameState();
+
+            if (stars > 0 && gameState.currentLevel === gameState.unlockedLevel) {
+                gameState.unlockedLevel = Math.min(levelsData.length, gameState.unlockedLevel + 1);
+                renderRoadmap();
+                saveGameState();
+            }
+        }
+
+        document.getElementById('btnNext').onclick = () => {
+            sounds.playUi();
+            document.getElementById('dialogOverlay').classList.add('hidden');
+            if (gameState.currentLevel < levelsData.length) {
+                startMatch(gameState.currentLevel + 1);
+            } else {
+                exitToMenu();
+            }
+        };
+
+        document.getElementById('btnRetry').onclick = () => {
+            sounds.playUi();
+            document.getElementById('dialogOverlay').classList.add('hidden');
+            startMatch(gameState.currentLevel);
+        };
+
+        document.getElementById('btnPause').onclick = () => {
+            sounds.playUi();
+            exitToMenu();
+        };
+
+        function exitToMenu() {
+            document.getElementById('hudOverlay').classList.add('hidden');
+            document.getElementById('dialogOverlay').classList.add('hidden');
+            document.getElementById('menuOverlay').classList.remove('hidden');
+            updateUIStats();
+        }
+
+        /* Persistence */
+        function saveGameState() {
+            localStorage.setItem('soccer_superstar_save', JSON.stringify(gameState));
+        }
+
+        function loadGameState() {
+            const saved = localStorage.getItem('soccer_superstar_save');
+            if (!saved) return;
+            try {
+                const parsed = JSON.parse(saved);
+                if (!parsed || typeof parsed !== 'object') return;
+                Object.assign(gameState, parsed);
+                gameState.stats = Object.assign(
+                    { goals: 0, assists: 0, curves: 0, trophies: 0 },
+                    gameState.stats || {}
+                );
+                if (!gameState.starsByLevel || typeof gameState.starsByLevel !== 'object') {
+                    gameState.starsByLevel = {};
+                }
+                if (!Array.isArray(gameState.boots) || gameState.boots.length === 0) {
+                    gameState.boots = [
+                        { name: 'Street', color: '#111827', price: 0, owned: true },
+                        { name: 'Emerald Pro', color: '#10b981', price: 120, owned: false },
+                        { name: 'Gold Strike', color: '#f59e0b', price: 250, owned: false },
+                        { name: 'Volt Flash', color: '#84cc16', price: 400, owned: false }
+                    ];
+                }
+                if (typeof gameState.unlockedLevel !== 'number') gameState.unlockedLevel = 1;
+                if (typeof gameState.selectedBoots !== 'number') gameState.selectedBoots = 0;
+            } catch (err) {
+                console.warn('Save ignored', err);
+            }
+        }
+
+        /* Initializer */
+        window.onload = () => {
+            loadGameState();
+            init3D();
+            initTrajectoryOverlay();
+            initCareerMenu();
+            animate();
+        };
+    </script>
+</body>
+</html>
